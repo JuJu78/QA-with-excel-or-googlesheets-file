@@ -4,12 +4,27 @@ import openai
 import base64
 import io
 import sys
-import xlsxwriter
+#import xlsxwriter
 import time
 import requests
 import re
 
 st.title("Q&AI A from Excel or Google Sheets file")
+
+with st.expander("Fonctionnement de l'application"):
+    st.markdown("""Cette application permet de générer des réponses fournies par l'un des modèles d'IA générative d'OpenAI (GPT-3.5 turbo ou GPT-4) à partir d'instructions et de questions posées dans un fichier Excel ou une feuille Google Sheets.\
+    \n\n**Instructions** :\
+    \n\n1. **Créer un fichier Excel ou une feuille Google Sheets avec deux colonnes** (la feuille Google Sheets doit être partagée à tous les utilisateurs qui ont le lien pour que cela fonctionne):\
+    \n\n\t **Important** : Le nom des entêtes de colonne importe peu. Mais il faut qu'elles soient présentes car l'IA ne commence à répondre aux questions qu'à partir de la deuxième ligne. Ne posez pas de questions à l'IA dès la 1ère ligne, il n'y répondra pas !\
+    \n\n\t- **La première colonne** contient les instructions à donner à l'IA.\
+    \n\n\t\t- Par exemple : "Tu es une intelligence artificielle spécialisée dans le SEO. Tu réponds de manière précise et pédagogique aux questions posées par l'utilisateur".\
+    \n\n\t- **La deuxième colonne** contient les questions à poser à l'IA.\
+    \n\n2. **Uploadez le fichier Excel ou la feuille Google Sheets**.\
+    \n\n3. **Cliquer sur le bouton "Commencer"**.\
+    \n\n4. **Attendre que l'IA génère les réponses**.\
+    \n\n5. **Lorsque l'IA a fini de parcourir le fichier de générer ses réponses, un dataframe s'affiche contenant les questions et les réponses**.\
+    \n\n6. **Télécharger le fichier Excel ou CSV contenant les questions et réponses de l'IA**.\
+    """)
 
 # Sidebar for user to enter API key and choose model
 api_key = st.sidebar.text_input("Enter your OpenAI API key")
@@ -60,7 +75,7 @@ elif option == "Enter a Google Sheets URL":
             data = get_sheet_values(google_sheets_url)
 
             # Create an empty DataFrame to store the Q&A
-            qna_data = pd.DataFrame(columns=["Question", "Response"])  # Remove the instruction column
+            qna_data = pd.DataFrame(columns=["Questions", "Responses"])  # Remove the instruction column
 
             def CustomChatGPT(instruction, question):
                 # Initialize messages for each question
@@ -97,11 +112,13 @@ elif option == "Enter a Google Sheets URL":
                 question = question.encode('iso-8859-1').decode('utf-8')
 
                 response = CustomChatGPT(instruction, question)
-                st.write(f"Response: {response}")
+                #st.write(f"Response: {response}")
 
                 # Add question and response to the lists
                 questions.append(question)
                 responses.append(response)
+
+                time.sleep(1)  # Pause for one second before sending the next question
 
             # Create a DataFrame from the lists
             qna_data = pd.DataFrame({"Question": questions, "Response": responses})
