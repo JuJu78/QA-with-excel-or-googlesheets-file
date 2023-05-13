@@ -4,10 +4,12 @@ import openai
 import base64
 import io
 import sys
-#import xlsxwriter
+import xlsxwriter
 import time
 import requests
 import re
+
+
 
 st.title("Q&AI A from Excel or Google Sheets file")
 
@@ -35,12 +37,16 @@ openai.api_key = api_key
 
 # Option to upload an Excel file or enter a Google Sheets URL
 option = st.selectbox("Choose an option", ["Upload an Excel file", "Enter a Google Sheets URL"])
+
+start_processing = False  # Initialize start_processing as False
 if option == "Upload an Excel file":
     uploaded_file = st.file_uploader("Excel File", type="xlsx")
     if uploaded_file is not None:
         if st.button("Commencer"):  # Only start the process when the start button is pressed
             data = pd.read_excel(uploaded_file)
+            start_processing = True  # Set start_processing to True
 
+# ...
 elif option == "Enter a Google Sheets URL":
     google_sheets_url = st.text_input("Google Sheets URL")
     if google_sheets_url != "":
@@ -61,6 +67,10 @@ elif option == "Enter a Google Sheets URL":
                 export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={sheet_gid}"
                 response = requests.get(export_url)
 
+                if response.status_code != 200:
+                    st.write(f"Erreur lors de la récupération des données de la feuille Google Sheets : {response.status_code}")
+                    return pd.DataFrame()
+
                 for encoding in ('utf-8', 'iso-8859-1', 'cp1252'):
                     try:
                         data = pd.read_csv(io.StringIO(response.text), encoding=encoding)
@@ -71,90 +81,94 @@ elif option == "Enter a Google Sheets URL":
                 # If none of the encodings work, raise an error
                 raise ValueError("Aucun encodage n'a fonctionné")
 
+            data = get_sheet_values(google_sheets_url)
+            if data.empty:
+                st.write("Aucune donnée récupérée depuis la feuille Google Sheets")
+            else:
+                start_processing = True  # Set start_processing to True
 
             data = get_sheet_values(google_sheets_url)
+            start_processing = True  # Set start_processing to True
 
-            # Create an empty DataFrame to store the Q&A
-            qna_data = pd.DataFrame(columns=["Questions", "Responses"])  # Remove the instruction column
+# Create an empty DataFrame to store the Q&A
+qna_data = pd.DataFrame(columns=["Questions", "Responses"])  # Remove the instruction column
 
-            def CustomChatGPT(instruction, question):
-                # Initialize messages for each question
-                messages = []
+if start_processing:
+    def CustomChatGPT(instruction, question):
+        # Initialize messages for each question
+        messages = []
 
-                # Treat all instructions as system role
-                messages.append({"role": "system", "content": instruction})
+        # Treat all instructions as system role
+        messages.append({"role": "system", "content": instruction})
 
-                # Treat all questions as user role
-                messages.append({"role": "user", "content": question})
+        # Treat all questions as user role
+        messages.append({"role": "user", "content": question})
 
-                # Retry logic
-                for _ in range(5):  # Try up to 5 times
-                    try:
-                        response = openai.ChatCompletion.create(
-                            model=model,
-                            temperature=temperature,
-                            messages=messages
-                        )
-                        return response["choices"][0]["message"]["content"]
-                    except openai.error.RateLimitError:
-                        st.write("Rate limit error encountered. Retrying after 5 seconds...")
-                        time.sleep(5)  # Wait for 5 seconds before retrying
+        # Retry logic
+        for _ in range(5):  # Try up to 5 times
+            try:
+                response = openai.ChatCompletion.create(
+                    model=model,
+                    temperature=temperature,
+                    messages=messages
+                )
+                return response["choices"][0]["message"]["content"]
+            except openai.error.RateLimitError:
+                st.write("Rate limit error encountered. Retrying after 5 seconds...")
+                time.sleep(5)  # Wait for 5 seconds before retrying
 
-            # Initialize lists to store questions and responses
-            questions = []
-            responses = []
+    # Initialize lists to store questions and responses
+    questions = []
+    responses = []
 
-            for _, row in data.iterrows():
-                instruction = row[0]  # Assuming instruction is in the first column
-                question = row[1]  # Assuming question is in the second column
+    for _, row in data.iterrows():
+        instruction = row[0]  # Assuming instruction is in the first column
+        question = row[1]  # Assuming question is in the second column
+        response = CustomChatGPT(instruction, question)
+        st.write(f"Response: {response}")
 
-                # Convert the encoding of the question
-                question = question.encode('iso-8859-1').decode('utf-8')
+        question = question.encode('utf-8', errors='ignore').decode('utf-8') # Convert the encoding of the question
+        response = response.encode('utf-8', errors='ignore').decode('utf-8') # Convert the encoding of the response
 
-                response = CustomChatGPT(instruction, question)
-                #st.write(f"Response: {response}")
+        # Append the question and response to their respective lists
+        questions.append(question)
+        responses.append(response)
 
-                # Add question and response to the lists
-                questions.append(question)
-                responses.append(response)
+    # Create a DataFrame from the lists
+    qna_data = pd.DataFrame({"Question": questions, "Response": responses})
 
-                time.sleep(1)  # Pause for one second before sending the next question
+    # Display the Q&A DataFrame
+    st.write(qna_data)
 
-            # Create a DataFrame from the lists
-            qna_data = pd.DataFrame({"Question": questions, "Response": responses})
-
-            # Display the Q&A DataFrame
-            st.write(qna_data)
-
-            # Function to download data as a csv file
-            def create_download_link_csv(df, filename):
-                df.to_csv('temporary.csv', index=False)
-                with open('temporary.csv', 'r', encoding='utf-8') as file:
-                    csv = file.read()
-                b64 = base64.b64encode(csv.encode()).decode()  # some strings <-> bytes conversions necessary here
-                return f'<a href="data:file/csv;base64,{b64}" download="{filename}">Download CSV file</a>'
-
-
-            # Function to download data as an excel file
-            def create_download_link_excel(df, filename):
-                stream = io.BytesIO()
-                df.to_excel(stream, index=False, sheet_name='Sheet1')  
-                stream.seek(0)
-                excel_data = stream.read()
-                b64 = base64.b64encode(excel_data).decode()
-                return f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{filename}">Download Excel file</a>'
+# Function to download data as a csv file
+def create_download_link_csv(df, filename):
+    df.to_csv('temporary.csv', index=False)
+    with open('temporary.csv', 'r', encoding='utf-8') as file:
+        csv = file.read()
+    b64 = base64.b64encode(csv.encode()).decode()  # some strings <-> bytes conversions necessary here
+    return f'<a href="data:file/csv;base64,{b64}" download="{filename}">Download CSV file</a>'
 
 
-            # Create and display download links as soon as DataFrame is ready
-            if not qna_data.empty:
-                download_link_csv = create_download_link_csv(qna_data, 'QA.csv')
-                download_link_excel = create_download_link_excel(qna_data, 'QA.xlsx')
+# Function to download data as an excel file
+def create_download_link_excel(df, filename):
+    stream = io.BytesIO()
+    df.to_excel(stream, index=False, sheet_name='Sheet1')  
+    stream.seek(0)
+    excel_data = stream.read()
+    b64 = base64.b64encode(excel_data).decode()
+    return f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{filename}">Download Excel file</a>'
 
-                # Create a two column layout for the download links
-                col1, col2 = st.columns(2)
-                
-                # Assign a download link to each column
-                with col1:
-                    st.markdown(download_link_csv, unsafe_allow_html=True)
-                with col2:
-                    st.markdown(download_link_excel, unsafe_allow_html=True)
+
+# Create and display download links as soon as DataFrame is ready
+if not qna_data.empty:
+    download_link_csv = create_download_link_csv(qna_data, 'QnA.csv')
+    download_link_excel = create_download_link_excel(qna_data, 'QnA.xlsx')
+
+    # Create a two column layout for the download links
+    col1, col2 = st.columns(2)
+    
+    # Assign a download link to each column
+    with col1:
+        st.markdown(download_link_csv, unsafe_allow_html=True)
+    with col2:
+        st.markdown(download_link_excel, unsafe_allow_html=True)
