@@ -36,13 +36,13 @@ openai.api_key = api_key
 # Option to upload an Excel file or enter a Google Sheets URL
 option = st.selectbox("Choose an option", ["Upload an Excel file", "Enter a Google Sheets URL"])
 if option == "Upload an Excel file":
-    uploaded_file = st.file_uploader("", type="xlsx")
+    uploaded_file = st.file_uploader("Excel File", type="xlsx")
     if uploaded_file is not None:
         if st.button("Commencer"):  # Only start the process when the start button is pressed
             data = pd.read_excel(uploaded_file)
 
 elif option == "Enter a Google Sheets URL":
-    google_sheets_url = st.text_input("")
+    google_sheets_url = st.text_input("Google Sheets URL")
     if google_sheets_url != "":
         if st.button("Commencer"):
             # Function to extract sheet id from URL
