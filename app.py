@@ -151,7 +151,7 @@ if start_processing:
         instruction = row[0]  # Assuming instruction is in the first column
         question = row[1]  # Assuming question is in the second column
         response = chatbot.chat(instruction, question)  # Use chatbot to call the chat method
-        st.markdown(f"**Question**:{question}", unsafe_allow_html=True)
+        st.markdown(f"**Question**: {question}", unsafe_allow_html=True)
         st.markdown(f"**Response**: {response}", unsafe_allow_html=True)
 
         question = question.encode('utf-8', errors='ignore').decode('utf-8') # Convert the encoding of the question
