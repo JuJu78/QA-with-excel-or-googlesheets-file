@@ -71,15 +71,12 @@ elif option == "Enter a Google Sheets URL":
                     st.write(f"Erreur lors de la récupération des données de la feuille Google Sheets : {response.status_code}")
                     return pd.DataFrame()
 
-                for encoding in ('utf-8', 'iso-8859-1', 'cp1252'):
-                    try:
-                        data = pd.read_csv(io.StringIO(response.text), encoding=encoding)
-                        return data
-                    except UnicodeDecodeError:
-                        continue
-
-                # If none of the encodings work, raise an error
-                raise ValueError("Aucun encodage n'a fonctionné")
+                try:
+                    data = pd.read_csv(io.StringIO(response.content.decode('utf-8-sig')), encoding='utf-8')
+                    return data
+                except UnicodeDecodeError:
+                    st.write("Erreur lors de la lecture des données de la feuille Google Sheets")
+                    return pd.DataFrame()
 
             data = get_sheet_values(google_sheets_url)
             if data.empty:
@@ -144,15 +141,20 @@ class CustomChatGPT:
 questions = []
 responses = []
 
+display_qna = st.checkbox("Décochez la case si vous ne souhaitez pas voir les questions et les réponses du chatbot s'afficher au fur et à mesure", value=True)
+
+
 if start_processing:
     chatbot = CustomChatGPT(model)
 
     for _, row in data.iterrows():
         instruction = row[0]  # Assuming instruction is in the first column
         question = row[1]  # Assuming question is in the second column
+
         response = chatbot.chat(instruction, question)  # Use chatbot to call the chat method
-        st.markdown(f"**Question**: {question}", unsafe_allow_html=True)
-        st.markdown(f"**Response**: {response}", unsafe_allow_html=True)
+        if display_qna:
+            st.markdown(f"**Question**: {question}", unsafe_allow_html=True)
+            st.markdown(f"**Response**: {response}", unsafe_allow_html=True)
 
         question = question.encode('utf-8', errors='ignore').decode('utf-8') # Convert the encoding of the question
         response = response.encode('utf-8', errors='ignore').decode('utf-8') # Convert the encoding of the response
