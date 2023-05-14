@@ -93,8 +93,14 @@ elif option == "Enter a Google Sheets URL":
 # Create an empty DataFrame to store the Q&A
 qna_data = pd.DataFrame(columns=["Questions", "Responses"])  # Remove the instruction column
 
-if start_processing:
-    def CustomChatGPT(instruction, question):
+class CustomChatGPT:
+    def __init__(self, model):
+        self.model = model
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_tokens = 0
+
+    def chat(self, instruction, question):
         # Initialize messages for each question
         messages = []
 
@@ -108,24 +114,45 @@ if start_processing:
         for _ in range(5):  # Try up to 5 times
             try:
                 response = openai.ChatCompletion.create(
-                    model=model,
+                    model=self.model,
                     temperature=temperature,
                     messages=messages
                 )
+                self.total_prompt_tokens += response['usage']['prompt_tokens']
+                self.total_completion_tokens += response['usage']['completion_tokens']
+                self.total_tokens += response['usage']['total_tokens']
                 return response["choices"][0]["message"]["content"]
             except openai.error.RateLimitError:
                 st.write("Rate limit error encountered. Retrying after 5 seconds...")
                 time.sleep(5)  # Wait for 5 seconds before retrying
 
-    # Initialize lists to store questions and responses
-    questions = []
-    responses = []
+    def get_total_cost(self):
+        # Cost per 1000 tokens
+        if self.model == 'gpt-4':
+            cost_per_1000_prompt = 0.03
+            cost_per_1000_completion = 0.06
+        elif self.model == 'gpt-3.5-turbo':
+            cost_per_1000_prompt = 0.002
+            cost_per_1000_completion = 0.002
+
+        # Calculate the total cost
+        total_cost = (self.total_prompt_tokens / 1000) * cost_per_1000_prompt + (self.total_completion_tokens / 1000) * cost_per_1000_completion
+        return total_cost
+
+
+# Initialize lists to store questions and responses
+questions = []
+responses = []
+
+if start_processing:
+    chatbot = CustomChatGPT(model)
 
     for _, row in data.iterrows():
         instruction = row[0]  # Assuming instruction is in the first column
         question = row[1]  # Assuming question is in the second column
-        response = CustomChatGPT(instruction, question)
-        st.write(f"Response: {response}")
+        response = chatbot.chat(instruction, question)  # Use chatbot to call the chat method
+        st.markdown(f"**Question**:{question}", unsafe_allow_html=True)
+        st.markdown(f"**Response**: {response}", unsafe_allow_html=True)
 
         question = question.encode('utf-8', errors='ignore').decode('utf-8') # Convert the encoding of the question
         response = response.encode('utf-8', errors='ignore').decode('utf-8') # Convert the encoding of the response
@@ -139,6 +166,7 @@ if start_processing:
 
     # Display the Q&A DataFrame
     st.write(qna_data)
+
 
 # Function to download data as a csv file
 def create_download_link_csv(df, filename):
@@ -172,3 +200,12 @@ if not qna_data.empty:
         st.markdown(download_link_csv, unsafe_allow_html=True)
     with col2:
         st.markdown(download_link_excel, unsafe_allow_html=True)
+
+    # display the total cost of the process
+    st.markdown(f"**Model used**: {chatbot.model}<br><br>**Total cost**: {chatbot.get_total_cost()} dollars", unsafe_allow_html=True)
+
+    # display the number of used tokens
+    st.markdown(f"**Total prompt tokens used**: {chatbot.total_prompt_tokens}", unsafe_allow_html=True)
+    st.markdown(f"**Total completion tokens used**: {chatbot.total_completion_tokens}", unsafe_allow_html=True)
+    st.markdown(f"**Total tokens used**: {chatbot.total_tokens}", unsafe_allow_html=True)
+
